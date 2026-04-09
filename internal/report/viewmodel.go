@@ -191,12 +191,24 @@ func computeChartSamples(full *session.FullSession) []chartSample {
 // renderSVGChart produces a self-contained SVG element drawing the
 // velocity series, the baseline, and a shaded region where the series
 // exceeds the baseline. No external fonts, no JavaScript.
+//
+// Label conventions:
+//   - Y-axis labels are compact ("92K", "3.0K", "650") with the unit
+//     (tok/min) already stated once in the chart legend. They live in
+//     a left gutter of padL pixels that is sized to accommodate the
+//     widest plausible label at 10px font.
+//   - The top Y label is drawn at the plot top edge using
+//     dominant-baseline="hanging" so its glyph top aligns with the
+//     drawing area, not its baseline.
+//   - The top label's VALUE is the actual data max (not the axis
+//     extent, which is data max * 1.1 for visual headroom). Users care
+//     where the peak was, not where the padding ends.
 func renderSVGChart(samples []chartSample, baseline float64, width, height int) string {
 	if len(samples) == 0 {
 		return `<svg viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"></svg>`
 	}
 
-	padL, padR, padT, padB := 50, 12, 12, 22
+	padL, padR, padT, padB := 56, 12, 14, 22
 	plotW := width - padL - padR
 	plotH := height - padT - padB
 
@@ -205,23 +217,25 @@ func renderSVGChart(samples []chartSample, baseline float64, width, height int) 
 	if maxX <= 0 {
 		maxX = 1
 	}
-	maxY := baseline
+	dataMax := baseline
 	for _, s := range samples {
-		if s.velocity > maxY {
-			maxY = s.velocity
+		if s.velocity > dataMax {
+			dataMax = s.velocity
 		}
 	}
-	if maxY <= 0 {
-		maxY = 1
+	if dataMax <= 0 {
+		dataMax = 1
 	}
-	// Add 10% headroom so the peak isn't pinned to the top edge.
-	maxY *= 1.1
+	// Axis extent = data max + 10% headroom so the peak isn't pinned
+	// to the top edge. Only the SCALE uses the padded extent; the
+	// label reports the real data max.
+	axisMax := dataMax * 1.1
 
 	xFor := func(minutes float64) float64 {
 		return float64(padL) + (minutes/maxX)*float64(plotW)
 	}
 	yFor := func(v float64) float64 {
-		return float64(padT+plotH) - (v/maxY)*float64(plotH)
+		return float64(padT+plotH) - (v/axisMax)*float64(plotH)
 	}
 
 	var series string
@@ -246,14 +260,12 @@ func renderSVGChart(samples []chartSample, baseline float64, width, height int) 
 			return
 		}
 		var pts string
-		// Top of polygon: curve.
 		for i := runStart; i <= end; i++ {
 			pts += fmt.Sprintf("%.1f,%.1f ",
 				xFor(samples[i].minutesFromStart),
 				yFor(samples[i].velocity),
 			)
 		}
-		// Bottom of polygon: baseline, right-to-left.
 		for i := end; i >= runStart; i-- {
 			pts += fmt.Sprintf("%.1f,%.1f ",
 				xFor(samples[i].minutesFromStart),
@@ -279,17 +291,28 @@ func renderSVGChart(samples []chartSample, baseline float64, width, height int) 
 		closeRun(len(samples) - 1)
 	}
 
-	// Y-axis labels: baseline and max.
+	// Compact axis labels — unit is stated in the legend.
+	baselineLabel := fmtAxisVelocity(baseline)
 	baselineY := yFor(baseline)
-	maxYLabel := fmtVelocity(maxY / 1.1)
-	baselineLabel := fmtVelocity(baseline)
+
+	// The data-max label is only worth rendering when it's clearly
+	// distinct from the baseline. If the two are within 14 pixels
+	// vertically they overlap illegibly; in that "no excursions"
+	// case, the baseline label alone is enough context.
+	var maxLabel string
+	if dataMax > baseline && (baselineY-yFor(dataMax)) >= 14 {
+		maxLabel = fmt.Sprintf(
+			`  <text x="%d" y="%.1f" fill="var(--dim,#9097a8)" font-size="10" text-anchor="end" dominant-baseline="middle">%s</text>`,
+			padL-4, yFor(dataMax), fmtAxisVelocity(dataMax),
+		)
+	}
 
 	svg := fmt.Sprintf(`<svg viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="velocity chart">
   <rect x="0" y="0" width="%d" height="%d" fill="none" />
   %s
   <line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="var(--chart-base,#626262)" stroke-width="1" stroke-dasharray="4,3" />
   <path d="%s" fill="none" stroke="var(--chart-line,#00d7ff)" stroke-width="1.6" />
-  <text x="%d" y="%d" fill="var(--dim,#9097a8)" font-size="10" text-anchor="end">%s</text>
+%s
   <text x="%d" y="%.1f" fill="var(--dim,#9097a8)" font-size="10" text-anchor="end" dominant-baseline="middle">%s</text>
   <text x="%d" y="%d" fill="var(--dim,#9097a8)" font-size="10">0 min</text>
   <text x="%d" y="%d" fill="var(--dim,#9097a8)" font-size="10" text-anchor="end">%.0f min</text>
@@ -299,12 +322,25 @@ func renderSVGChart(samples []chartSample, baseline float64, width, height int) 
 		shades,
 		padL, baselineY, width-padR, baselineY,
 		series,
-		padL-4, padT+10, maxYLabel,
+		maxLabel,
 		padL-4, baselineY, baselineLabel,
 		padL, height-6,
 		width-padR, height-6, maxX,
 	)
 	return svg
+}
+
+// fmtAxisVelocity produces compact Y-axis labels suitable for a chart
+// gutter. The unit (tok/min) is implied by the legend, so the label
+// itself is pure magnitude.
+func fmtAxisVelocity(v float64) string {
+	if v >= 10_000 {
+		return fmt.Sprintf("%.0fK", v/1000)
+	}
+	if v >= 1_000 {
+		return fmt.Sprintf("%.1fK", v/1000)
+	}
+	return fmt.Sprintf("%.0f", v)
 }
 
 // --- helpers ---
