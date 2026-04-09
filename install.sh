@@ -135,5 +135,8 @@ if ! path_contains "$INSTALL_DIR"; then
 fi
 
 say ""
-say "Next step — register as a Login Item so it auto-starts at login:"
+say "To finish setup, run:"
 say "    $TARGET install"
+say ""
+say "That will wrap vig in ~/Applications/vig.app, add it to Login"
+say "Items → Open at Login, and start it immediately."
