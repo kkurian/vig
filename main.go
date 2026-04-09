@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kkurian/vig/internal/anomaly"
 	"github.com/kkurian/vig/internal/config"
 	"github.com/kkurian/vig/internal/daemon"
 	"github.com/kkurian/vig/internal/report"
@@ -125,14 +126,18 @@ func cmdReport(args []string) {
 		Messages:  msgs,
 		FilePath:  path,
 	}
-	// Velocity/baseline aren't meaningful for a manual report since
-	// the session isn't currently exceeding anything — use the final
-	// rolling window as the "velocity" reading and zero as baseline.
+	// Use the session's final 2-minute rolling window as the report's
+	// "velocity when fired" — it's the closest analogue to what the
+	// live detector would read for a session that just transitioned
+	// to anomalous. Compute a fresh historical baseline so the report
+	// shows a meaningful comparison, not a zero baseline that renders
+	// the whole trigger panel misleading.
 	v := finalWindowVelocity(msgs)
+	baseline := anomaly.ComputeBaseline(session.ScanAll()).P95
 	reportPath, err := report.Build(report.Params{
 		Session:     s,
 		Velocity:    v,
-		BaselineP95: 0,
+		BaselineP95: baseline,
 		AlertTime:   time.Now(),
 		Version:     version,
 	})
