@@ -80,5 +80,5 @@ fi
 say ""
 say "vig $VERSION installed to ${INSTALL_DIR}/${BIN_NAME}"
 say ""
-say "Next step — register as a LaunchAgent so it auto-starts at login:"
+say "Next step — register as a Login Item so it auto-starts at login:"
 say "    vig install"
