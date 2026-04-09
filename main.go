@@ -10,9 +10,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/kkurian/vig/internal/config"
@@ -20,7 +22,7 @@ import (
 )
 
 // version is injected at release build time via
-// -ldflags "-X main.version=v0.1.0". Defaults to "dev" for local builds.
+// -ldflags "-X main.version=v0.2.0". Defaults to "dev" for local builds.
 var version = "dev"
 
 func main() {
@@ -29,10 +31,11 @@ func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "install":
-			if err := daemon.Install(); err != nil {
+			if err := daemon.Install(version); err != nil {
 				fatal(err)
 			}
-			fmt.Printf("vig installed as LaunchAgent. Logs: %s\n", daemon.LogPath())
+			fmt.Printf("vig %s installed. Logs: %s\n", version, daemon.LogPath())
+			fmt.Println("Visible in System Settings → General → Login Items → Open at Login.")
 			return
 		case "uninstall":
 			if err := daemon.Uninstall(); err != nil {
@@ -54,6 +57,8 @@ func main() {
 	}
 
 	// No subcommand → run the daemon in the foreground.
+	setupLogging()
+
 	cfg := config.Load()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -75,18 +80,51 @@ func main() {
 	}
 }
 
+// setupLogging points the global logger at ~/Library/Logs/vig.log so
+// the daemon always writes to a known file regardless of how it was
+// launched (Login Item, LaunchAgent, foreground shell). When stderr is
+// a TTY — i.e. the user ran `./vig` directly — we also tee to stderr so
+// live debugging is still possible.
+//
+// Any failure to open the log file is non-fatal: the default stderr
+// sink is left in place and the daemon keeps running.
+func setupLogging() {
+	logPath := daemon.LogPath()
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+
+	if isCharDevice(os.Stderr) {
+		log.SetOutput(io.MultiWriter(os.Stderr, f))
+	} else {
+		log.SetOutput(f)
+	}
+}
+
+func isCharDevice(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
 func printUsage() {
 	fmt.Println(`vig — background anomaly detector for Claude Code sessions
 
 Usage:
     vig              Run the daemon in the foreground.
-    vig install      Install as a LaunchAgent (auto-starts at login).
-    vig uninstall    Remove the LaunchAgent.
+    vig install      Install as a Login Item (auto-starts at login).
+    vig uninstall    Remove the Login Item.
     vig --version    Show version.
     vig --help       Show this help.
 
 Config (optional): ~/.config/vig/config.json
-Logs (when installed): ~/Library/Logs/vig.log`)
+Logs:              ~/Library/Logs/vig.log`)
 }
 
 func fatal(err error) {

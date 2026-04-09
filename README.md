@@ -7,7 +7,7 @@ Background anomaly detector for [Claude Code](https://docs.anthropic.com/en/docs
 - Zero network calls. No LLM usage. Pure local Go + macOS `osascript`.
 - Reads `~/.claude/projects/*.jsonl` every 30 seconds (gated on `pgrep claude`, so idle when Claude isn't running).
 - Learns your normal output velocity from the last 30 days of sessions and refreshes the baseline every 6 hours.
-- Runs as a LaunchAgent at login. Invisible until something is wrong.
+- Installs as a Login Item (visible in System Settings) and auto-starts at every login. Invisible until something is wrong.
 
 ## Install
 
@@ -18,7 +18,11 @@ vig install
 
 The first line downloads the latest release binary for your architecture (darwin/amd64 or darwin/arm64), verifies its SHA-256 against the checksum file in the release, and installs it to `/usr/local/bin/vig`. Set `VIG_INSTALL_DIR` to change the target; set `VIG_VERSION` to pin a specific tag.
 
-The second line writes `~/Library/LaunchAgents/com.kkurian.vig.plist` pointing at the installed binary and boots it via `launchctl`. Re-run `vig install` after upgrading to re-point the LaunchAgent at the new binary.
+The second line wraps the binary in `~/Applications/vig.app`, registers the app bundle as a macOS Login Item so it auto-starts at every login, and launches it immediately. You will see it listed in **System Settings → General → Login Items → Open at Login**.
+
+**One-time permission prompt:** the first `vig install` triggers a macOS dialog ("vig wants to control System Events"). Click OK — this is what lets vig add itself to the Login Items list. Subsequent `vig install` runs (e.g. after upgrading) don't re-prompt.
+
+Re-running `vig install` is safe and idempotent: it kills the running copy, removes any prior `vig.app` and any prior Login Item, copies the fresh binary in, and relaunches. Do this after every upgrade.
 
 You will get a modal alert the next time a session goes sustained-hot. Dismiss it with a click.
 
@@ -49,7 +53,7 @@ vig uninstall
 
 ## Logs
 
-`~/Library/Logs/vig.log`. Events only — start, baseline recompute, anomaly, shutdown. No per-scan spam.
+`~/Library/Logs/vig.log`. Events only — start, baseline recompute, anomaly, shutdown. No per-scan spam. Written whether vig is running as a Login Item or in the foreground.
 
 ## Manual run
 
@@ -57,7 +61,7 @@ vig uninstall
 vig            # foreground, Ctrl-C to stop
 ```
 
-Useful for debugging or running without the LaunchAgent. Stdout goes to your terminal.
+Useful for debugging or running without installing as a Login Item. When stderr is a TTY the logger tees both to `~/Library/Logs/vig.log` and to your terminal, so you can also `tail -f ~/Library/Logs/vig.log` from another window.
 
 ## How detection works
 
