@@ -69,12 +69,25 @@ fi
 chmod +x "${TMPDIR}/${BIN_NAME}"
 
 # ---- install ----
+#
+# There are three cases:
+#
+#   1. The install directory is writable by us → mv into place.
+#   2. The install directory is NOT writable but an existing target
+#      file IS writable (common on macOS where /usr/local/bin is root-
+#      owned but a Homebrew user already chown'd a vig binary into it)
+#      → cp over the file in place. This avoids a needless sudo prompt
+#      during upgrades.
+#   3. Neither → sudo.
 mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+TARGET="${INSTALL_DIR}/${BIN_NAME}"
 if [ -w "$INSTALL_DIR" ]; then
-    mv "${TMPDIR}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
+    mv "${TMPDIR}/${BIN_NAME}" "$TARGET"
+elif [ -e "$TARGET" ] && [ -w "$TARGET" ]; then
+    cp "${TMPDIR}/${BIN_NAME}" "$TARGET"
 else
     say "Installing to $INSTALL_DIR requires sudo..."
-    sudo mv "${TMPDIR}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
+    sudo mv "${TMPDIR}/${BIN_NAME}" "$TARGET"
 fi
 
 say ""
