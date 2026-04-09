@@ -123,6 +123,11 @@ say ""
 say "vig $VERSION installed to $TARGET"
 
 # ---- PATH guidance ----
+#
+# Only surface this when it's actionable. Everything else (how to
+# finish setup, what vig install does, etc.) lives in the README so
+# install.sh output doesn't contradict commands the user has already
+# queued up from copy/pasting the README.
 if ! path_contains "$INSTALL_DIR"; then
     say ""
     say "Note: $INSTALL_DIR is not in your PATH. Add it to your shell profile:"
@@ -133,10 +138,3 @@ if ! path_contains "$INSTALL_DIR"; then
         say "    export PATH=\"$INSTALL_DIR:\$PATH\""
     fi
 fi
-
-say ""
-say "To finish setup, run:"
-say "    $TARGET install"
-say ""
-say "That will wrap vig in ~/Applications/vig.app, add it to Login"
-say "Items → Open at Login, and start it immediately."
