@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      # Opt into Node.js 24 for JavaScript-based actions now. GitHub is
+      # making this the default on 2026-06-02; setting it preemptively
+      # surfaces any incompatibility in CI today instead of on the
+      # morning of the next release.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+
+      - name: Build darwin binaries
+        env:
+          CGO_ENABLED: 0
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=darwin GOARCH=$arch go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o dist/vig-darwin-$arch .
+          done
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 vig-darwin-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub release
+        # Only publish when a tag push triggered the workflow. Manual
+        # `gh workflow run release.yml` dispatches run the full build
+        # and checksum path as a dry run, without cutting a release.
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/vig-darwin-amd64
+            dist/vig-darwin-arm64
+            dist/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
