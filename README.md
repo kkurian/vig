@@ -4,6 +4,8 @@
 
 Background anomaly detector for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. Pops a persistent macOS alert when one of your sessions has been burning tokens sustained above your historical 95th percentile for 5+ minutes. The alert offers two buttons — **Show Report** opens a self-contained HTML anomaly report in your browser, **Dismiss** closes the alert.
 
+![vig anomaly report](docs/anomaly-report-screenshot.png)
+
 - Zero network calls. No LLM usage. Pure local Go + macOS `osascript`.
 - Reads `~/.claude/projects/*.jsonl` every 30 seconds (gated on `pgrep claude`, so idle when Claude isn't running).
 - Learns your normal output velocity from the last 30 days of sessions and refreshes the baseline every 6 hours. Historical anomalies are automatically excluded from the baseline so detection doesn't drift over time.
@@ -66,8 +68,6 @@ Every anomaly alert generates a standalone HTML report at `~/Library/Logs/vig-re
 - An SVG velocity sparkline covering the entire session, with the P95 baseline drawn as a dashed line and the exceeding regions shaded.
 - Session metadata: ID, project, model, git branch, working directory, duration, total output tokens, JSONL path.
 - The last ~40 messages, showing role, timestamp, tool calls, and the first ~600 characters of text content.
-
-![vig anomaly report](docs/anomaly-report-screenshot.png)
 
 Reports persist until you delete them. No automatic pruning. Inspect them with:
 
