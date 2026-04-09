@@ -16,7 +16,9 @@ curl -fsSL https://raw.githubusercontent.com/kkurian/vig/main/install.sh | bash
 vig install
 ```
 
-The first line downloads the latest release binary for your architecture (darwin/amd64 or darwin/arm64), verifies its SHA-256 against the checksum file in the release, and installs it to `/usr/local/bin/vig`. Set `VIG_INSTALL_DIR` to change the target; set `VIG_VERSION` to pin a specific tag.
+The first line downloads the latest release binary for your architecture (darwin/amd64 or darwin/arm64), verifies its SHA-256 against the checksum file in the release, and installs it into a user-owned directory (prefers an existing in-PATH choice like `~/bin`, `~/.local/bin`, or `$GOPATH/bin`; falls back to `~/.local/bin`). No `sudo` required. Set `VIG_INSTALL_DIR` to override the location; set `VIG_VERSION` to pin a specific tag.
+
+> **Why not `/usr/local/bin`?** macOS 15 Sequoia's `syspolicyd` can cache path-keyed Gatekeeper decisions that an in-place `cp` upgrade won't invalidate, causing a stale binary to SIGKILL on exec with no diagnostic (exit 137). Installing to a user-owned directory avoids the cache entirely.
 
 The second line wraps the binary in `~/Applications/vig.app`, registers the app bundle as a macOS Login Item so it auto-starts at every login, and launches it immediately. You will see it listed in **System Settings → General → Login Items → Open at Login**.
 
