@@ -12,8 +12,14 @@ import (
 	"github.com/kkurian/vig/internal/anomaly"
 	"github.com/kkurian/vig/internal/config"
 	"github.com/kkurian/vig/internal/notify"
+	"github.com/kkurian/vig/internal/report"
 	"github.com/kkurian/vig/internal/session"
 )
+
+// Version is set by main at startup so the daemon can stamp the
+// currently-running binary's version into generated anomaly reports.
+// Defaults to "dev" so tests and local builds don't render "".
+var Version = "dev"
 
 // Run is the daemon's main loop. It blocks until ctx is cancelled.
 //
@@ -22,10 +28,16 @@ import (
 // asynchronously from 30 days of session history and then refreshed on
 // cfg.BaselineRefresh() intervals.
 func Run(ctx context.Context, cfg config.Config) error {
+	// The detector is created with a nil callback first so the
+	// callback closure can capture a stable reference to it. This
+	// is the cleanest way to break the cycle between "onAlert
+	// needs the detector to read the baseline" and "the detector
+	// needs onAlert to fire on match."
 	det := anomaly.NewDetector(
 		anomaly.Baseline{P95: 5000, UsingColdStart: true},
-		onAlert(cfg),
+		nil,
 	)
+	det.SetOnAlert(buildOnAlert(cfg, det))
 
 	go refreshBaseline(ctx, det, cfg.BaselineRefresh())
 
@@ -80,15 +92,51 @@ func refreshBaseline(ctx context.Context, det *anomaly.Detector, every time.Dura
 	}
 }
 
-func onAlert(cfg config.Config) func(string, float64) {
-	return func(sid string, v float64) {
+// buildOnAlert returns the callback the detector invokes when a
+// session transitions into the sustained-above-P95 state. It
+// generates an HTML report for the anomaly, logs the path, and
+// pops a modal macOS alert with two buttons: "Show Report" (opens
+// the HTML) and "Dismiss".
+//
+// Report generation may take a few tens of ms (reading the JSONL,
+// parsing, templating). We do it on the calling goroutine because
+// the detector's callback runs on the ticker goroutine — not a
+// perf-critical path — and it's simpler than dispatching. If the
+// report fails for any reason we still fire an alert with no
+// "Show Report" button so the user still hears about the anomaly.
+func buildOnAlert(cfg config.Config, det *anomaly.Detector) anomaly.OnAlert {
+	return func(s *session.Session, v float64) {
+		title := "vig — Anomaly Detected"
+		body := fmt.Sprintf(
+			"Session %s sustained %s above the P95 baseline.",
+			shortID(s.ID), fmtVelocity(v),
+		)
+
 		if !cfg.NotifyOnAnomaly {
-			log.Printf("ANOMALY (suppressed) %s: %s", shortID(sid), fmtVelocity(v))
+			log.Printf("ANOMALY (suppressed) %s: %s", shortID(s.ID), fmtVelocity(v))
 			return
 		}
-		msg := fmt.Sprintf("Session %s burning %s sustained above P95", shortID(sid), fmtVelocity(v))
-		log.Printf("ANOMALY %s", msg)
-		_ = notify.Send("vig — Anomaly Detected", msg)
+
+		reportPath, err := report.Build(report.Params{
+			Session:     s,
+			Velocity:    v,
+			BaselineP95: det.P95Snapshot(),
+			AlertTime:   time.Now(),
+			Version:     Version,
+		})
+		if err != nil {
+			log.Printf("ANOMALY report build failed: %v", err)
+			log.Printf("ANOMALY %s", body)
+			_ = notify.SendAnomalyAlert(title, body, "")
+			return
+		}
+
+		log.Printf("ANOMALY %s (report: %s)", body, reportPath)
+		_ = notify.SendAnomalyAlert(
+			title,
+			body+"\n\nClick \u201cShow Report\u201d for the full breakdown.",
+			reportPath,
+		)
 	}
 }
 

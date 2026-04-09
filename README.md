@@ -2,12 +2,13 @@
 
 > keep an eye on claude
 
-Background anomaly detector for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. Pops a persistent macOS alert when one of your sessions has been burning tokens sustained above your historical 95th percentile for 5+ minutes.
+Background anomaly detector for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. Pops a persistent macOS alert when one of your sessions has been burning tokens sustained above your historical 95th percentile for 5+ minutes. The alert offers two buttons — **Show Report** opens a self-contained HTML anomaly report in your browser, **Dismiss** closes the alert.
 
 - Zero network calls. No LLM usage. Pure local Go + macOS `osascript`.
 - Reads `~/.claude/projects/*.jsonl` every 30 seconds (gated on `pgrep claude`, so idle when Claude isn't running).
-- Learns your normal output velocity from the last 30 days of sessions and refreshes the baseline every 6 hours.
+- Learns your normal output velocity from the last 30 days of sessions and refreshes the baseline every 6 hours. Historical anomalies are automatically excluded from the baseline so detection doesn't drift over time.
 - Installs as a Login Item (visible in System Settings) and auto-starts at every login. Invisible until something is wrong.
+- Anomaly reports persist in `~/Library/Logs/vig-reports/` — you can re-open old ones via `vig reports`.
 
 ## Install
 
@@ -56,6 +57,25 @@ vig uninstall
 ## Logs
 
 `~/Library/Logs/vig.log`. Events only — start, baseline recompute, anomaly, shutdown. No per-scan spam. Written whether vig is running as a Login Item or in the foreground.
+
+## Reports
+
+Every anomaly alert generates a standalone HTML report at `~/Library/Logs/vig-reports/<timestamp>-<sessionprefix>.html`. Each report contains:
+
+- Trigger summary: velocity at fire time, baseline P95, ratio, sustained duration.
+- An SVG velocity sparkline covering the entire session, with the P95 baseline drawn as a dashed line and the exceeding regions shaded.
+- Session metadata: ID, project, model, git branch, working directory, duration, total output tokens, JSONL path.
+- The last ~40 messages, showing role, timestamp, tool calls, and the first ~600 characters of text content.
+
+![vig anomaly report](docs/anomaly-report-screenshot.png)
+
+Reports persist until you delete them. No automatic pruning. Inspect them with:
+
+```bash
+vig reports              # list past reports, most recent first
+vig reports 1            # open the most recent report in your browser
+vig report <session>     # build a fresh report for any session ID prefix
+```
 
 ## Manual run
 

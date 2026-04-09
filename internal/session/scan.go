@@ -77,6 +77,7 @@ func buildSession(jsonlPath string) *Session {
 		ID:        strings.TrimSuffix(filepath.Base(jsonlPath), ".jsonl"),
 		StartTime: msgs[0].Timestamp,
 		Messages:  msgs,
+		FilePath:  jsonlPath,
 	}
 }
 

@@ -113,11 +113,19 @@ func ComputeBaseline(sessions []*session.Session) Baseline {
 	return Baseline{P95: pct(cleanVelocities, anomalyPercentile)}
 }
 
+// OnAlert is the callback signature the detector invokes the first
+// time a session transitions into the "sustained above P95" state.
+// It receives the session that triggered and the velocity reading
+// at that moment. Callbacks should be fast and non-blocking; any
+// heavy work (report generation, notification) should be dispatched
+// to a goroutine inside the callback.
+type OnAlert func(s *session.Session, velocity float64)
+
 type Detector struct {
 	mu       sync.Mutex
 	baseline Baseline
 	trackers map[string]*tracker
-	onAlert  func(string, float64)
+	onAlert  OnAlert
 }
 
 type tracker struct {
@@ -126,7 +134,7 @@ type tracker struct {
 	alerted        bool
 }
 
-func NewDetector(b Baseline, onAlert func(string, float64)) *Detector {
+func NewDetector(b Baseline, onAlert OnAlert) *Detector {
 	return &Detector{baseline: b, trackers: make(map[string]*tracker), onAlert: onAlert}
 }
 
@@ -134,6 +142,26 @@ func (d *Detector) UpdateBaseline(b Baseline) {
 	d.mu.Lock()
 	d.baseline = b
 	d.mu.Unlock()
+}
+
+// SetOnAlert installs (or replaces) the callback fired when a
+// session transitions to sustained-above-P95. Useful when the
+// callback needs a stable reference to the detector it's bound to —
+// the caller can create the detector first, then install a closure
+// that captures it.
+func (d *Detector) SetOnAlert(fn OnAlert) {
+	d.mu.Lock()
+	d.onAlert = fn
+	d.mu.Unlock()
+}
+
+// P95Snapshot returns the current P95 baseline value. Safe to call
+// from any goroutine. Reports use this to record the threshold the
+// detector was using at the moment an alert fired.
+func (d *Detector) P95Snapshot() float64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.baseline.P95
 }
 
 // GCTrackers drops tracker state for any session ID not present in seen.
@@ -171,7 +199,7 @@ func (d *Detector) Check(s *session.Session) bool {
 		if sustained && !t.alerted {
 			t.alerted = true
 			if d.onAlert != nil {
-				d.onAlert(s.ID, v)
+				d.onAlert(s, v)
 			}
 		}
 		return sustained

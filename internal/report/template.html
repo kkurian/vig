@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>vig — {{.ProjectName}} anomaly report</title>
+    <style>
+        :root {
+            --bg: #0d0e12;
+            --panel: #161821;
+            --text: #e6e8ef;
+            --dim: #9097a8;
+            --accent: #ff5f5f;
+            --ok: #00ff87;
+            --line: #2a2d3a;
+            --chart-line: #00d7ff;
+            --chart-base: #626262;
+            --chart-shade: rgba(255, 95, 95, 0.15);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font: 14px/1.5 -apple-system, ui-monospace, "SF Mono", Monaco, monospace;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem 1rem;
+        }
+        main { max-width: 960px; margin: 0 auto; }
+        h1 {
+            font-size: 1.5rem;
+            margin: 0 0 .25rem 0;
+            font-weight: 700;
+        }
+        h1 .tag { color: var(--accent); }
+        h2 {
+            font-size: 1rem;
+            margin: 2rem 0 .75rem 0;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: var(--dim);
+            border-bottom: 1px solid var(--line);
+            padding-bottom: .25rem;
+        }
+        .subtitle { color: var(--dim); margin: 0 0 1.5rem 0; }
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 1rem 1.25rem;
+        }
+        .kv {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            gap: .4rem 1rem;
+        }
+        .kv dt { color: var(--dim); }
+        .kv dd { margin: 0; word-break: break-all; }
+        .kv dd.big { font-size: 1.25rem; font-weight: 700; }
+        .kv dd.accent { color: var(--accent); }
+        .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1rem; }
+        .chart svg { display: block; width: 100%; height: auto; }
+        .chart-legend {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: .5rem;
+            font-size: .85rem;
+            color: var(--dim);
+        }
+        .chart-legend .swatch {
+            display: inline-block;
+            width: .75rem;
+            height: .75rem;
+            margin-right: .35rem;
+            vertical-align: middle;
+            border-radius: 2px;
+        }
+        .msgs {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: .5rem 0;
+        }
+        .msg {
+            padding: .6rem 1rem;
+            border-bottom: 1px solid var(--line);
+        }
+        .msg:last-child { border-bottom: none; }
+        .msg header {
+            display: flex;
+            gap: .75rem;
+            color: var(--dim);
+            font-size: .85rem;
+            margin-bottom: .25rem;
+        }
+        .msg .role { font-weight: 700; }
+        .msg .role.user { color: var(--ok); }
+        .msg .role.asst { color: var(--chart-line); }
+        .msg .tools { color: var(--accent); }
+        .msg pre {
+            margin: 0;
+            font-family: inherit;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: var(--text);
+        }
+        .footer {
+            margin-top: 2rem;
+            color: var(--dim);
+            font-size: .85rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1><span class="tag">⚠ ANOMALY</span> {{.ProjectName}}</h1>
+    <p class="subtitle">{{.AlertTime}} · session {{.SessionIDShort}}</p>
+
+    <h2>Trigger</h2>
+    <div class="panel">
+        <dl class="kv">
+            <dt>Velocity when fired</dt>
+            <dd class="big accent">{{.VelocityFmt}}</dd>
+            <dt>Baseline P95</dt>
+            <dd>{{.BaselineFmt}}</dd>
+            <dt>Ratio</dt>
+            <dd>{{.Ratio}}× above baseline</dd>
+            <dt>Sustained for</dt>
+            <dd>at least {{.SustainedMin}} minutes</dd>
+        </dl>
+    </div>
+
+    <h2>Velocity over the session</h2>
+    <div class="chart">
+        {{.Chart}}
+        <div class="chart-legend">
+            <span><span class="swatch" style="background:var(--chart-line)"></span>rolling 2-min velocity</span>
+            <span><span class="swatch" style="background:var(--chart-base)"></span>P95 baseline</span>
+            <span><span class="swatch" style="background:var(--chart-shade)"></span>above baseline</span>
+        </div>
+    </div>
+
+    <h2>Session</h2>
+    <div class="panel">
+        <dl class="kv">
+            <dt>ID</dt>
+            <dd>{{.SessionID}}</dd>
+            <dt>Project</dt>
+            <dd>{{.ProjectName}}</dd>
+            {{if .Model}}<dt>Model</dt><dd>{{.Model}}</dd>{{end}}
+            {{if .GitBranch}}<dt>Git branch</dt><dd>{{.GitBranch}}</dd>{{end}}
+            {{if .CWD}}<dt>Working dir</dt><dd>{{.CWD}}</dd>{{end}}
+            <dt>Started</dt>
+            <dd>{{.StartTime}}</dd>
+            <dt>Duration</dt>
+            <dd>{{.Duration}}</dd>
+            <dt>Total output tokens</dt>
+            <dd>{{.TotalOutput}}</dd>
+            <dt>JSONL</dt>
+            <dd>{{.FilePath}}</dd>
+        </dl>
+    </div>
+
+    <h2>Recent activity ({{.RecentCount}} of {{.TotalMessages}} messages)</h2>
+    <div class="msgs">
+        {{range .RecentMessages}}
+        <div class="msg">
+            <header>
+                <span class="ts">{{.TimeFmt}}</span>
+                <span class="role {{.RoleClass}}">{{.Role}}</span>
+                {{if .Tools}}<span class="tools">[{{.Tools}}]</span>{{end}}
+                {{if .OutputTokens}}<span>{{.OutputTokens}} out</span>{{end}}
+            </header>
+            {{if .Text}}<pre>{{.Text}}</pre>{{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <p class="footer">Generated {{.GeneratedAt}} by vig {{.Version}}</p>
+</main>
+</body>
+</html>
